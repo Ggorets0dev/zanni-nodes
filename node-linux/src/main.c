@@ -11,9 +11,11 @@ static znc_config_t config;
 
 static int on_recv(zanni_message_t *message)
 {
+    int exit_code = 0;
+    
     if (!message) return 1;
 
-    log_format(LOG_LEVEL_INFO, "Recieved message: [tag=%s, dev_type=%d, status=%d]", message->tag, message->device_type, message->status);
+    log_format(LOG_LEVEL_INFO, "Recieved message: [tag=%s, dev_type=%d, status=%d]", message->tag, message->device_type, message->payload.dev_status);
 
     const znc_virtual_device_t* dev = znc_config_get_device_by_tag(&config, message->tag);
 
@@ -25,10 +27,10 @@ static int on_recv(zanni_message_t *message)
 
     if (dev->type == ZANNI_VIRT_DEV_TOGGLE)
     {
-        char* output = znc_execute_toggle(&dev->commands.toggle, message->status);
+        char* output = znc_execute_toggle(&dev->commands.toggle, message->payload.dev_status, &exit_code);
     
-        if (!output)    log_format(LOG_LEVEL_WARN, "Failed to execute command for collected message: [tag=%s, dev_type=%d, status=%d]", message->tag, message->device_type, message->status);
-        else            log_format(LOG_LEVEL_INFO, "Executed command for collected message: [tag=%s, dev_type=%d, status=%d, output=%s]", message->tag, message->device_type, message->status, output);
+        if (!output)    log_format(LOG_LEVEL_WARN, "Failed to execute command for collected message: [tag=%s, dev_type=%d, status=%d]", message->tag, message->device_type, message->payload.dev_status);
+        else            log_format(LOG_LEVEL_INFO, "Executed command for collected message: [tag=%s, dev_type=%d, status=%d, output=%s]", message->tag, message->device_type, message->payload.dev_status, output);
     
         free(output);
     }
@@ -38,7 +40,7 @@ static int on_recv(zanni_message_t *message)
         return 1;
     }
 
-    return 0;
+    return exit_code;
 }
 
 int main(int argc, char** argv) 

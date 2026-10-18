@@ -1,9 +1,6 @@
 TARGET ?= 
 BIN_OUTPUT ?= ./bin
 
-$(BIN_OUTPUT):
-	mkdir $(BIN_OUTPUT)
-
 build: $(BIN_OUTPUT)
 	$(if $(strip $(TARGET)),,$(error TARGET is required. Available: linux, openwrt))
 	@if [ "$(TARGET)" = "linux" ]; then \
@@ -26,4 +23,7 @@ clean:
 		make clean TARGET=openwrt; \
 	fi
 
-.PHONY: build
+$(BIN_OUTPUT):
+	mkdir -p $(BIN_OUTPUT)
+
+.PHONY: build clean

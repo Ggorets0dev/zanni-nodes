@@ -45,6 +45,7 @@ static void set_keepalive(int sock)
 int znc_start_server(int port, int listen_backlog, zanni_recv_callback_t callback)
 {
     int rc = 0;
+    zanni_decode_status_e dcd_status = ZANNI_DCD_STATUS_OK;
     zanni_message_t msg = {0};
 
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -128,11 +129,11 @@ int znc_start_server(int port, int listen_backlog, zanni_recv_callback_t callbac
             }
             else 
             {
-                uint8_t buf[ZANNI_MSG_SIZE] = {0};
+                uint8_t buffer[ZANNI_MSG_SIZE] = {0};
 
                 for (;;)
                 {
-                    ssize_t bytes_read = read(active_fd, buf, sizeof(buf));
+                    const ssize_t bytes_read = read(active_fd, buffer, sizeof(buffer));
                     
                     // ======= ERROR SECTION
                     if (bytes_read == -1) 
@@ -148,7 +149,7 @@ int znc_start_server(int port, int listen_backlog, zanni_recv_callback_t callbac
                             break;
                         }
                     } 
-                    else if (bytes_read != sizeof(buf)) 
+                    else if (bytes_read != sizeof(buffer)) 
                     {
                         close(active_fd);
                         log_format(LOG_LEVEL_INFO, "Client disconnected: [fd=%d]", active_fd);
@@ -156,12 +157,25 @@ int znc_start_server(int port, int listen_backlog, zanni_recv_callback_t callbac
                     }
                     // =======
 
-                    rc = zanni_message_decode(buf, bytes_read, &msg);
+                    dcd_status = zanni_message_decode(buffer, bytes_read, &msg);
 
-                    if (rc == 0)
+                    if (dcd_status == ZANNI_DCD_STATUS_OK)
                     {
-                        callback(&msg);
+                        const int exit_code = callback(&msg);
+
+                        msg.payload.exec_status = (zanni_exec_status_e)exit_code;
+                        zanni_message_encode(&msg, buffer, sizeof(buffer));
+                        const ssize_t bytes_wrote = send(active_fd, buffer, sizeof(buffer), 0);
+
                         continue;
+                    }
+                    else if (dcd_status == ZANNI_DCD_STATUS_WRONG_VER)
+                    {
+                        log_format(LOG_LEVEL_WARN, "Message with wrong major protocol version collected: [curr_ver=%d]", ZANNI_PROTOCOL_VERSION_MAJOR);
+                    }
+                    else if (dcd_status == ZANNI_DCD_STATUS_ERROR)
+                    {
+                        log_format(LOG_LEVEL_WARN, "Unknown error occured while decoding message");
                     }
                 }
             }
