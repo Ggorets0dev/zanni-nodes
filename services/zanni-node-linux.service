@@ -1,0 +1,39 @@
+[Unit]
+Description=ZanniGate Linux Node Service
+Documentation=https://github.com/Ggorets0dev/zanni-gate-protocol
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+
+# Systemd Watchdog: Node will send keepalive pings (WATCHDOG=1) periodically.
+# If the service hangs or stops pinging within WatchdogSec, systemd will restart it.
+WatchdogSec=30s
+Restart=on-failure
+RestartSec=5s
+
+# Configuration file path (can be overridden in /etc/default/zanni-node-linux)
+Environment="ZANNI_CONFIG=/etc/zanni-node/config.json"
+EnvironmentFile=-/etc/default/zanni-node-linux
+ExecStart=/usr/local/bin/zanni-node-linux $ZANNI_CONFIG
+
+# Graceful termination handling
+TimeoutStopSec=10s
+KillMode=process
+
+# Logging: Standard output to systemd journal; creates /var/log/zanni-gate-node directory
+StandardOutput=journal
+StandardError=journal
+LogsDirectory=zanni-gate-node
+ConfigurationDirectory=zannigate
+
+# Security and sandboxing
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

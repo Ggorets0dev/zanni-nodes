@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <pthread.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/epoll.h>
@@ -43,6 +44,26 @@ static void set_keepalive(int sock)
     setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keep_count, sizeof(keep_count));
 }
 
+static znc_ready_callback_t g_ready_callback = NULL;
+static volatile sig_atomic_t g_server_running = 0;
+static int g_stop_event_fd = -1;
+
+void znc_set_ready_callback(znc_ready_callback_t callback)
+{
+    g_ready_callback = callback;
+}
+
+void znc_stop_server(void)
+{
+    g_server_running = 0;
+    if (g_stop_event_fd >= 0)
+    {
+        uint64_t val = 1;
+        ssize_t s = write(g_stop_event_fd, &val, sizeof(val));
+        (void)s;
+    }
+}
+
 int znc_start_server(int port, int listen_backlog, zanni_recv_callback_t callback)
 {
     int rc = 0;
@@ -60,16 +81,22 @@ int znc_start_server(int port, int listen_backlog, zanni_recv_callback_t callbac
 
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) 
     {
+        close(server_fd);
         return 1;
     }
     
     if (listen(server_fd, listen_backlog) < 0) 
     {
+        close(server_fd);
         return 1;
     }
 
     int epoll_fd = epoll_create1(0);
-    if (epoll_fd == -1)     return 1;
+    if (epoll_fd == -1)
+    {
+        close(server_fd);
+        return 1;
+    }
 
     set_nonblocking(server_fd);
 
@@ -79,15 +106,45 @@ int znc_start_server(int port, int listen_backlog, zanni_recv_callback_t callbac
     ev.data.fd = server_fd;
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev);
 
-    struct epoll_event events[MAX_EVENTS];
+    g_stop_event_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (g_stop_event_fd >= 0)
+    {
+        struct epoll_event ev_stop;
+        ev_stop.events = EPOLLIN;
+        ev_stop.data.fd = g_stop_event_fd;
+        epoll_ctl(epoll_fd, EPOLL_CTL_ADD, g_stop_event_fd, &ev_stop);
+    }
 
-    for (;;)
+    if (g_ready_callback)
+    {
+        g_ready_callback();
+    }
+
+    struct epoll_event events[MAX_EVENTS];
+    g_server_running = 1;
+
+    while (g_server_running)
     {
         int n = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        if (n < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            log_format(LOG_LEVEL_ERROR, "epoll_wait error: %s", strerror(errno));
+            break;
+        }
 
         for (int i = 0; i < n; i++)
         {
             int active_fd = events[i].data.fd;
+
+            if (active_fd == g_stop_event_fd)
+            {
+                g_server_running = 0;
+                break;
+            }
 
             if (active_fd == server_fd)
             {
@@ -181,6 +238,24 @@ int znc_start_server(int port, int listen_backlog, zanni_recv_callback_t callbac
                 }
             }
         }
+    }
+
+    if (g_stop_event_fd >= 0)
+    {
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, g_stop_event_fd, NULL);
+        close(g_stop_event_fd);
+        g_stop_event_fd = -1;
+    }
+
+    if (server_fd >= 0)
+    {
+        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, server_fd, NULL);
+        close(server_fd);
+    }
+
+    if (epoll_fd >= 0)
+    {
+        close(epoll_fd);
     }
 
     return 0;

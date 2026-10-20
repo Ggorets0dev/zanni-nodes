@@ -23,12 +23,14 @@ __CONSTRUCTOR static void log_init(void)
 
     if (!log_file)
     {
-        perror("Failed to open log file");
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "Warning: Failed to open log file '%s', continuing with stdout only\n", log_file_path);
     }
 
     setvbuf(stdout, NULL, _IOLBF, 0);
-    setvbuf(log_file, NULL, _IOLBF, 0);
+    if (log_file)
+    {
+        setvbuf(log_file, NULL, _IOLBF, 0);
+    }
 }
 
 __DESTRUCTOR void log_deinit(void)
