@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <fcntl.h>
@@ -163,7 +164,7 @@ int znc_start_server(int port, int listen_backlog, zanni_recv_callback_t callbac
                     {
                         const int exit_code = callback(&msg);
 
-                        msg.payload.exec_status = (zanni_exec_status_e)exit_code;
+                        msg.payload.exec_status = ((zanni_exec_status_e)exit_code == EXIT_SUCCESS) ? true : false;
                         zanni_message_encode(&msg, buffer, sizeof(buffer));
                         const ssize_t bytes_wrote = send(active_fd, buffer, sizeof(buffer), 0);
 
